@@ -5,13 +5,14 @@ import { loadCharacters } from "@/lib/character-storage";
 import { loadChatContacts } from "@/lib/chat-storage";
 import { addMomentPost } from "@/lib/moments-storage";
 import { onUserPost } from "@/lib/moments-engine";
-import { resolveUserIdentity } from "@/lib/settings-storage";
+import { characterMatchesChatScope, loadChatScope, resolveChatScopeUserIdentity } from "@/lib/chat-scope-storage";
 import { saveChatImageToIndexedDB, getChatImageFromIndexedDB } from "@/lib/chat-asset-storage";
 import { ChatFallbackAvatar } from "./chat-fallback-avatar";
+import type { MomentPost } from "@/lib/moments-types";
 
 type Props = {
     onClose: () => void;
-    onPublished: () => void;
+    onPublished: (post: MomentPost) => void;
 };
 
 export function MomentsCompose({ onClose, onPublished }: Props) {
@@ -34,7 +35,7 @@ export function MomentsCompose({ onClose, onPublished }: Props) {
         const map: Record<string, boolean> = {};
         contacts.forEach(c => {
             const char = chars.find(ch => ch.id === c.characterId);
-            if (char) map[c.characterId] = true;
+            if (char && characterMatchesChatScope(c.characterId)) map[c.characterId] = true;
         });
         return map;
     });
@@ -47,7 +48,7 @@ export function MomentsCompose({ onClose, onPublished }: Props) {
 
     const enrichedContacts = contacts
         .map(c => ({ ...c, char: chars.find(ch => ch.id === c.characterId) }))
-        .filter(c => c.char);
+        .filter(c => c.char && characterMatchesChatScope(c.characterId));
 
     const visibleCount = Object.values(visibility).filter(Boolean).length;
     const isAllSelected = enrichedContacts.length > 0 && enrichedContacts.every(c => visibility[c.characterId]);
@@ -169,6 +170,7 @@ export function MomentsCompose({ onClose, onPublished }: Props) {
         const post = addMomentPost({
             authorType: "user",
             authorId: "user",
+            userIdentityId: loadChatScope().userIdentityId || resolveChatScopeUserIdentity()?.id,
             content,
             photoUrl: photoAssetId ? `asset://${photoAssetId}` : undefined,
             photoDescription: photoDesc.trim() || undefined,
@@ -179,7 +181,7 @@ export function MomentsCompose({ onClose, onPublished }: Props) {
         if (post) {
             try { onUserPost(post); } catch (e) { console.warn("[Compose] onUserPost error:", e); }
         }
-        onPublished();
+        if (post) onPublished(post);
     };
 
     const canPublish = text.trim().length > 0;
